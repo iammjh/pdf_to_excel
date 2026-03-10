@@ -1,0 +1,19 @@
+# SDS PDF folder — local data only, do not upload
+SDS/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Output files
+*.xlsx
+*.csv
+
+# Virtual environment
+venv/
+.env/
+
+# OS
+.DS_Store
+Thumbs.db

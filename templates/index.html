@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SDS Extractor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        linear-gradient(135deg, rgba(15,23,42,0.82) 0%, rgba(30,58,138,0.78) 100%),
+        url("https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?w=1400&q=80&fit=crop")
+        center/cover no-repeat fixed;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.97);
+      border-radius: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.30);
+      padding: 48px 40px;
+      width: 100%;
+      max-width: 520px;
+      backdrop-filter: blur(4px);
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      color: #1e3a8a;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 0.95rem;
+      margin-bottom: 32px;
+    }
+
+    .flash-list {
+      list-style: none;
+      margin-bottom: 20px;
+    }
+
+    .flash-list li {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      color: #856404;
+      margin-bottom: 8px;
+    }
+
+    .drop-zone {
+      border: 2px dashed #a0aec0;
+      border-radius: 10px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: #f8fafc;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: #4f46e5;
+      background: #eef2ff;
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      font-size: 2.4rem;
+      margin-bottom: 12px;
+    }
+
+    .drop-zone p {
+      color: #555;
+      font-size: 0.95rem;
+    }
+
+    .drop-zone .hint {
+      font-size: 0.82rem;
+      color: #999;
+      margin-top: 6px;
+    }
+
+    #file-list {
+      margin-bottom: 24px;
+      font-size: 0.88rem;
+      color: #374151;
+    }
+
+    #file-list li {
+      padding: 4px 0;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #file-list li::before { content: '📄'; }
+
+    button[type="submit"] {
+      width: 100%;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button[type="submit"]:hover { background: #4338ca; }
+    button[type="submit"]:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+    .spinner {
+      display: none;
+      margin-top: 18px;
+      text-align: center;
+      color: #4f46e5;
+      font-size: 0.9rem;
+    }
+
+    .spinner::before {
+      content: '';
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 3px solid #c7d2fe;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <h1>SDS Chemical Extractor</h1>
+  <p class="subtitle">Upload SDS PDF files — get an Excel file with Product Name, Chemical Name &amp; CAS Numbers.</p>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul class="flash-list">
+        {% for msg in messages %}<li>{{ msg }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST" action="/extract" enctype="multipart/form-data" id="upload-form">
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" name="pdfs" id="file-input" accept=".pdf" multiple />
+      <div class="drop-icon">📂</div>
+      <p>Click to browse or drag &amp; drop PDF files here</p>
+      <p class="hint">Multiple files supported</p>
+    </div>
+
+    <ul id="file-list"></ul>
+
+    <button type="submit" id="submit-btn" disabled>Extract to Excel</button>
+    <div class="spinner" id="spinner">Extracting, please wait…</div>
+
+  </form>
+</div>
+
+<script>
+  const input      = document.getElementById('file-input');
+  const fileList   = document.getElementById('file-list');
+  const submitBtn  = document.getElementById('submit-btn');
+  const dropZone   = document.getElementById('drop-zone');
+  const spinner    = document.getElementById('spinner');
+  const form       = document.getElementById('upload-form');
+
+  function updateList(files) {
+    fileList.innerHTML = '';
+    if (files.length === 0) { submitBtn.disabled = true; return; }
+    [...files].forEach(f => {
+      const li = document.createElement('li');
+      li.textContent = f.name;
+      fileList.appendChild(li);
+    });
+    submitBtn.disabled = false;
+  }
+
+  input.addEventListener('change', () => updateList(input.files));
+
+  // Drag & drop
+  dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    input.files = e.dataTransfer.files;   // assign dropped files
+    updateList(input.files);
+  });
+
+  form.addEventListener('submit', () => {
+    submitBtn.disabled = true;
+    spinner.style.display = 'block';
+  });
+</script>
+
+</body>
+</html>
