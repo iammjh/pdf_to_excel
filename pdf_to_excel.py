@@ -13,10 +13,13 @@ Usage:
 import re
 import os
 import sys
+import math
 from typing import List, Dict
 
 import pandas as pd
 import pdfplumber
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
 CAS_RE = re.compile(r'\b(\d{1,7}-\d{2}-\d)\b')
@@ -427,6 +430,57 @@ def extract_from_pdf(pdf_path: str) -> Dict:
     return {'product_name': product_name, 'items': items}
 
 
+def autofit_worksheet(worksheet, min_width: int = 10, max_width: int = 60) -> None:
+    column_widths: Dict[int, int] = {}
+    header_fill = PatternFill(fill_type='solid', start_color='D9E1F2', end_color='D9E1F2')
+    header_alignment = Alignment(horizontal='center', vertical='center')
+    header_border = Border(
+        left=Side(style='thin', color='BFBFBF'),
+        right=Side(style='thin', color='BFBFBF'),
+        top=Side(style='thin', color='BFBFBF'),
+        bottom=Side(style='thin', color='BFBFBF'),
+    )
+
+    for col_idx in range(1, worksheet.max_column + 1):
+        header_cell = worksheet.cell(row=1, column=col_idx)
+        header_cell.font = Font(bold=True)
+        header_cell.fill = header_fill
+        header_cell.alignment = header_alignment
+        header_cell.border = header_border
+
+    for row in worksheet.iter_rows(
+        min_row=1,
+        max_row=worksheet.max_row,
+        min_col=1,
+        max_col=worksheet.max_column,
+    ):
+        for cell in row:
+            value = '' if cell.value is None else str(cell.value)
+            longest_line = max((len(part) for part in value.splitlines()), default=0)
+            current = column_widths.get(cell.column, 0)
+            if longest_line > current:
+                column_widths[cell.column] = longest_line
+
+    effective_widths: Dict[int, int] = {}
+    for col_idx, longest in column_widths.items():
+        width = max(min_width, min(longest + 2, max_width))
+        worksheet.column_dimensions[get_column_letter(col_idx)].width = width
+        effective_widths[col_idx] = width
+
+    for row_idx in range(1, worksheet.max_row + 1):
+        max_lines = 1
+        for col_idx in range(1, worksheet.max_column + 1):
+            value = worksheet.cell(row=row_idx, column=col_idx).value
+            text = '' if value is None else str(value)
+            width = max(1, int(effective_widths.get(col_idx, min_width)) - 2)
+            wrapped_lines = 0
+            for line in text.splitlines() or ['']:
+                wrapped_lines += max(1, math.ceil(len(line) / width))
+            if wrapped_lines > max_lines:
+                max_lines = wrapped_lines
+        worksheet.row_dimensions[row_idx].height = min(120, max(15, max_lines * 15))
+
+
 # ── Folder processing & Excel output ─────────────────────────────────────────
 
 def process_folder(folder: str, output_xlsx: str) -> pd.DataFrame:
@@ -461,6 +515,7 @@ def process_folder(folder: str, output_xlsx: str) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=['Product Name', 'Chemical Name', 'CAS Number'])
     with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Chemicals')
+        autofit_worksheet(writer.sheets['Chemicals'])
 
     print(f'\nSaved {len(df)} rows  →  {output_xlsx}')
     return df
@@ -481,6 +536,7 @@ def main():
         df = pd.DataFrame(rows, columns=['Product Name', 'Chemical Name', 'CAS Number'])
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Chemicals')
+            autofit_worksheet(writer.sheets['Chemicals'])
         print(f'Saved {len(df)} rows  →  {output}')
         print(df.to_string(index=False))
 

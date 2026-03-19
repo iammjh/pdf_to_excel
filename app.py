@@ -8,9 +8,10 @@ import io
 import tempfile
 
 from flask import Flask, request, render_template, send_file, flash, redirect, url_for
+from werkzeug.utils import secure_filename
 
 # Import extraction logic from the same folder
-from pdf_to_excel import extract_from_pdf
+from pdf_to_excel import extract_from_pdf, autofit_worksheet
 
 import pandas as pd
 
@@ -45,13 +46,20 @@ def extract():
                 continue
 
             # Save upload to temp file
-            tmp_path = os.path.join(tmpdir, f.filename)
+            safe_name = secure_filename(f.filename) or 'uploaded.pdf'
+            tmp_path = os.path.join(tmpdir, safe_name)
             f.save(tmp_path)
 
             try:
                 result = extract_from_pdf(tmp_path)
-                product_name = result['product_name'] or f.filename
-                items = result['items']
+                product_name = result.get('product_name') or safe_name
+
+                items = result.get('items')
+                if items is None:
+                    items = [
+                        {'chem_name': '', 'cas': cas}
+                        for cas in result.get('cas_list', [])
+                    ]
 
                 if items:
                     for item in items:
@@ -84,6 +92,7 @@ def extract():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Chemicals')
+        autofit_worksheet(writer.sheets['Chemicals'])
     buf.seek(0)
 
     return send_file(
